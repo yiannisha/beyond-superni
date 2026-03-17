@@ -20,6 +20,9 @@ dependencies = [
 dev = [
   "pytest>=8.3.0",
 ]
+viz = [
+  "matplotlib>=3.9.0",
+]
 
 [project.scripts]
 superni-benchmark = "superni_benchmark.cli:main"

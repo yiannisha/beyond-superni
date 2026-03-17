@@ -40,6 +40,8 @@ There is also a broader preset in `configs/wide.yaml` that expands the open-sour
 uv venv
 source .venv/bin/activate
 uv pip install -e ".[dev]"
+# optional, for figure rendering:
+uv pip install -e ".[dev,viz]"
 ```
 
 Set credentials:
@@ -67,6 +69,22 @@ Artifacts:
 - `results/default/summary.md`
 
 If a run stops mid-way, rerun the same command. Existing per-model JSONL files are reused and only missing examples are requested again.
+
+## Plot
+
+The repo now includes a reusable plotting command that reads any `results/*` directory. It prefers `summary.json` when present and falls back to `summary.md`.
+
+```bash
+superni-benchmark plot --results results/default
+# choose a different metric for the heatmap and write SVGs:
+superni-benchmark plot --results results/wide --heatmap-metric rouge_l --top-tasks 15 --format svg
+```
+
+By default, figures are written to `results/<run>/figures/` and include:
+
+- grouped score bars across models
+- latency-vs-quality scatter
+- per-task heatmap for the selected metric
 
 ## Cost control
 
