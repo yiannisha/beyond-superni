@@ -2,6 +2,10 @@
 
 Self-contained benchmark harness for evaluating remote LLMs on the [Super Natural Instructions dataset](https://huggingface.co/datasets/Muennighoff/natural-instructions) without fine-tuning.
 
+Documentation:
+
+- [Benchmark metrics guide](docs/benchmark-metrics.md)
+
 ## What this does
 
 - Downloads `Muennighoff/natural-instructions` from Hugging Face.
