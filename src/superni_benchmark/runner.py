@@ -10,7 +10,12 @@ from statistics import mean
 from tqdm import tqdm
 
 from superni_benchmark.config import BenchmarkConfig
-from superni_benchmark.dataset import BenchmarkExample, load_benchmark_examples
+from superni_benchmark.dataset import (
+    BenchmarkExample,
+    inject_icl_prompts,
+    load_benchmark_examples,
+    load_icl_examples_by_task,
+)
 from superni_benchmark.metrics import score_prediction
 from superni_benchmark.models import build_model_client
 
@@ -20,6 +25,8 @@ def run_benchmark(config: BenchmarkConfig) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     examples = load_benchmark_examples(config.dataset, config.prompt)
+    icl_examples_by_task = load_icl_examples_by_task(config.dataset, config.icl, examples)
+    examples = inject_icl_prompts(examples, icl_examples_by_task, config.icl)
     if not examples:
         raise ValueError("No benchmark examples were collected. Adjust the dataset split or sampling settings.")
     manifest = {
@@ -84,6 +91,10 @@ def _run_or_resume_model(
         existing_records = _load_existing_records(model_output_path)
 
     mode = "w" if overwrite or not model_output_path.exists() or not resume else "a"
+    if mode == "a" and not _can_resume_examples(existing_records, examples):
+        existing_records = {}
+        mode = "w"
+
     records: list[dict[str, object]] = []
     with model_output_path.open(mode, encoding="utf-8") as handle:
         for example in tqdm(examples, desc=model_name):
@@ -171,3 +182,19 @@ def _load_existing_records(path: Path) -> dict[str, dict[str, object]]:
             record = json.loads(line)
             records[str(record["example_id"])] = record
     return records
+
+
+def _can_resume_examples(
+    existing_records: dict[str, dict[str, object]],
+    examples: list[BenchmarkExample],
+) -> bool:
+    if not existing_records:
+        return True
+
+    for example in examples:
+        existing = existing_records.get(example.example_id)
+        if existing is None:
+            continue
+        if str(existing.get("prompt", "")) != example.prompt:
+            return False
+    return True

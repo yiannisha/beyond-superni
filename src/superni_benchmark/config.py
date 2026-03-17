@@ -38,6 +38,14 @@ class PromptConfig:
 
 
 @dataclass(slots=True)
+class ICLConfig:
+    enabled: bool = False
+    num_examples: int = 0
+    source_split: str | None = None
+    max_records_to_scan: int = 100_000
+
+
+@dataclass(slots=True)
 class GenerationConfig:
     temperature: float = 0.0
     max_output_tokens: int = 256
@@ -69,6 +77,7 @@ class OutputConfig:
 class BenchmarkConfig:
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     prompt: PromptConfig = field(default_factory=PromptConfig)
+    icl: ICLConfig = field(default_factory=ICLConfig)
     generation: GenerationConfig = field(default_factory=GenerationConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     models: list[ModelConfig] = field(default_factory=list)
@@ -84,6 +93,7 @@ class BenchmarkConfig:
         return cls(
             dataset=DatasetConfig(**raw.get("dataset", {})),
             prompt=PromptConfig(**raw.get("prompt", {})),
+            icl=ICLConfig(**raw.get("icl", {})),
             generation=GenerationConfig(**raw.get("generation", {})),
             output=OutputConfig(**raw.get("output", {})),
             models=[ModelConfig(**entry) for entry in raw.get("models", [])],

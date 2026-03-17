@@ -11,6 +11,7 @@ Documentation:
 - Downloads `Muennighoff/natural-instructions` from Hugging Face.
 - Streams a fixed subset of tasks and instances per task from the held-out split.
 - Builds instruction-following prompts from each task definition and optional examples.
+- Supports an ICL benchmark mode that prepends random same-task few-shot examples from a disjoint support split.
 - Queries remote models only:
   - OpenAI via the official `openai` API.
   - Hugging Face Inference Providers via `huggingface_hub.InferenceClient`, with `provider=hyperbolic` by default for Llama and Qwen.
@@ -20,6 +21,8 @@ Documentation:
 ## Why this setup
 
 SuperNI is primarily used as a continual-learning or per-task SFT resource. This experiment deliberately does **no fine-tuning**. It treats SuperNI as a zero-shot benchmark for current frontier models to measure how difficult the benchmark still is for strong base models.
+
+The repo also supports a matched ICL mode. In that mode, each evaluation prompt is augmented with `icl.num_examples` random support examples from the same task. By default, the support examples can come from the benchmark split itself as long as they are disjoint from the evaluated inputs. If you want a stricter setup, set `icl.source_split: train`. In either case, the harness excludes any support example whose `id` or normalized input overlaps an evaluation example.
 
 The Hugging Face dataset artifact exposed here is a flattened instance-level view with the fields `task_name`, `definition`, `inputs`, and `targets`. The harness benchmarks that view directly instead of reconstructing the original task JSON files.
 
@@ -57,6 +60,8 @@ For Hugging Face Inference Providers, `HF_TOKEN` works when you route through Hu
 
 ```bash
 superni-benchmark run --config configs/default.yaml
+# or, for the matched ICL variant:
+superni-benchmark run --config configs/icl.yaml
 # or, for a wider/longer run:
 superni-benchmark run --config configs/wide.yaml
 ```
@@ -97,6 +102,8 @@ The full dataset is too large for practical API benchmarking. The default config
 That is enough to get a first pass on relative difficulty without turning the run into a large API bill. Increase `max_tasks` and `max_instances_per_task` gradually.
 
 To increase examples per task, raise `dataset.max_instances_per_task`. If you do that, also raise `dataset.max_records_to_scan` so the streaming sampler has enough rows to fill every task quota. Total calls are roughly `enabled_models * max_tasks * max_instances_per_task`.
+
+For ICL runs, the number of API calls does not change, but prompt size does. The default [configs/icl.yaml](/workspace/beyond-superni/configs/icl.yaml) uses `icl.source_split: test` and excludes any overlap with benchmarked inputs. If you want support examples from a different split, set `icl.source_split: train`.
 
 ## Notes
 

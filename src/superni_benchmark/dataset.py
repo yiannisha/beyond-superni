@@ -6,7 +6,7 @@ from typing import Any
 
 from datasets import load_dataset
 
-from superni_benchmark.config import DatasetConfig, PromptConfig
+from superni_benchmark.config import DatasetConfig, ICLConfig, PromptConfig
 
 
 @dataclass(slots=True)
@@ -93,6 +93,124 @@ def load_benchmark_examples(
     return examples
 
 
+def load_icl_examples_by_task(
+    dataset_config: DatasetConfig,
+    icl_config: ICLConfig,
+    evaluation_examples: list[BenchmarkExample],
+) -> dict[str, list[BenchmarkExample]]:
+    if not icl_config.enabled or icl_config.num_examples <= 0:
+        return {}
+
+    tasks = {example.task_name for example in evaluation_examples}
+    if not tasks:
+        return {}
+
+    excluded_ids = {example.example_id for example in evaluation_examples}
+    excluded_inputs_by_task: dict[str, set[str]] = {}
+    for example in evaluation_examples:
+        excluded_inputs_by_task.setdefault(example.task_name, set()).add(_normalize_input(example.input_text))
+
+    source_split = icl_config.source_split or dataset_config.split
+    dataset = load_dataset(
+        dataset_config.hf_dataset,
+        split=source_split,
+        streaming=dataset_config.streaming,
+    )
+    if dataset_config.streaming and dataset_config.shuffle_buffer_size > 1:
+        dataset = dataset.shuffle(
+            seed=dataset_config.seed + 1,
+            buffer_size=dataset_config.shuffle_buffer_size,
+        )
+
+    examples_by_task: dict[str, list[BenchmarkExample]] = {task_name: [] for task_name in tasks}
+    for index, row in enumerate(dataset, start=1):
+        if index > icl_config.max_records_to_scan:
+            break
+
+        task_name = row["task_name"]
+        if task_name not in tasks:
+            continue
+        if len(examples_by_task[task_name]) >= icl_config.num_examples:
+            if _all_icl_collected(examples_by_task, icl_config.num_examples):
+                break
+            continue
+
+        example_id = str(row["id"])
+        input_text = str(row["inputs"])
+        if example_id in excluded_ids:
+            continue
+        if _normalize_input(input_text) in excluded_inputs_by_task.get(task_name, set()):
+            continue
+
+        references = _coerce_references(row.get("targets", []))
+        if not references:
+            continue
+
+        examples_by_task[task_name].append(
+            BenchmarkExample(
+                task_name=task_name,
+                example_id=example_id,
+                definition=str(row["definition"]),
+                input_text=input_text,
+                references=references,
+                prompt="",
+                metadata={"icl_source_split": source_split},
+            )
+        )
+
+        if _all_icl_collected(examples_by_task, icl_config.num_examples):
+            break
+
+    missing_tasks = sorted(
+        task_name
+        for task_name, task_examples in examples_by_task.items()
+        if len(task_examples) < icl_config.num_examples
+    )
+    if missing_tasks:
+        raise ValueError(
+            "Unable to collect enough non-overlapping ICL examples for tasks: "
+            + ", ".join(missing_tasks)
+            + f". Increase icl.max_records_to_scan or choose a different icl.source_split (current: {source_split})."
+        )
+
+    return examples_by_task
+
+
+def inject_icl_prompts(
+    evaluation_examples: list[BenchmarkExample],
+    icl_examples_by_task: dict[str, list[BenchmarkExample]],
+    icl_config: ICLConfig,
+) -> list[BenchmarkExample]:
+    if not icl_config.enabled or icl_config.num_examples <= 0:
+        return evaluation_examples
+
+    updated_examples: list[BenchmarkExample] = []
+    for example in evaluation_examples:
+        icl_examples = icl_examples_by_task.get(example.task_name, [])
+        source_split = (
+            str(icl_examples[0].metadata.get("icl_source_split"))
+            if icl_examples
+            else (icl_config.source_split or "")
+        )
+        prompt = _inject_icl_section(example.prompt, icl_examples)
+        metadata = dict(example.metadata)
+        metadata["icl_example_ids"] = [icl_example.example_id for icl_example in icl_examples]
+        metadata["icl_num_examples"] = len(icl_examples)
+        metadata["icl_source_split"] = source_split
+        updated_examples.append(
+            BenchmarkExample(
+                task_name=example.task_name,
+                example_id=example.example_id,
+                definition=example.definition,
+                input_text=example.input_text,
+                references=example.references,
+                prompt=prompt,
+                metadata=metadata,
+            )
+        )
+    return updated_examples
+
+
 def build_prompt(row: dict[str, Any], config: PromptConfig) -> str:
     sections = [
         "Task definition:",
@@ -129,6 +247,10 @@ def _is_collection_complete(
     if len(selected_tasks) < max_tasks:
         return False
     return all(task_counts[task_name] >= per_task_limit for task_name in selected_tasks)
+
+
+def _all_icl_collected(examples_by_task: dict[str, list[BenchmarkExample]], per_task_limit: int) -> bool:
+    return all(len(task_examples) >= per_task_limit for task_examples in examples_by_task.values())
 
 
 def _coerce_references(value: Any) -> list[str]:
@@ -176,3 +298,33 @@ def _truncate(text: str, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return text[: max_chars - 3].rstrip() + "..."
+
+
+def _normalize_input(text: str) -> str:
+    return " ".join(text.split()).strip()
+
+
+def _inject_icl_section(prompt: str, icl_examples: list[BenchmarkExample]) -> str:
+    if not icl_examples:
+        return prompt
+
+    marker = "\n\nInput:\n\n"
+    insertion_point = prompt.rfind(marker)
+    if insertion_point == -1:
+        raise ValueError("Prompt is missing the final input section required for ICL injection.")
+
+    blocks = []
+    for index, example in enumerate(icl_examples, start=1):
+        blocks.append(
+            "\n".join(
+                [
+                    f"Few-shot example {index} input:",
+                    example.input_text,
+                    "Few-shot example output:",
+                    example.references[0],
+                ]
+            )
+        )
+
+    icl_section = "\n\nFew-shot examples:\n\n" + "\n\n".join(blocks)
+    return prompt[:insertion_point] + icl_section + prompt[insertion_point:]
