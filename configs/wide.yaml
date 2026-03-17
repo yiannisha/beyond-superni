@@ -1,0 +1,83 @@
+dataset:
+  hf_dataset: Muennighoff/natural-instructions
+  split: test
+  max_tasks: 25
+  max_instances_per_task: 25
+  seed: 7
+  streaming: true
+  shuffle_buffer_size: 10000
+  max_records_to_scan: 250000
+
+prompt:
+  include_positive_examples: false
+  include_negative_examples: false
+  num_positive_examples: 0
+  num_negative_examples: 0
+  max_definition_chars: 4000
+  max_input_chars: 8000
+  max_example_chars: 1500
+  system_prompt: >-
+    You are answering one Super Natural Instructions task. Return only the task answer.
+    Do not explain your reasoning. Do not include labels such as "Answer:".
+
+generation:
+  temperature: 0.0
+  max_output_tokens: 256
+  timeout_seconds: 120
+  max_retries: 4
+
+output:
+  root_dir: results/wide
+  resume: true
+  overwrite: false
+
+models:
+  - name: openai_gpt54
+    backend: openai
+    model: gpt-5.4-2026-03-05
+    api_key_env: OPENAI_API_KEY
+    reasoning_effort: low
+  - name: openai_gpt5mini
+    backend: openai
+    model: gpt-5-mini-2025-08-07
+    api_key_env: OPENAI_API_KEY
+  - name: hf_llama33_70b_hyperbolic
+    backend: huggingface-chat
+    provider: hyperbolic
+    model: meta-llama/Llama-3.3-70B-Instruct
+    api_key_env: HF_TOKEN
+  - name: hf_llama31_70b_hyperbolic
+    backend: huggingface-chat
+    provider: hyperbolic
+    model: meta-llama/Llama-3.1-70B-Instruct
+    api_key_env: HF_TOKEN
+  - name: hf_llama31_405b_hyperbolic
+    backend: huggingface-chat
+    provider: hyperbolic
+    model: meta-llama/Llama-3.1-405B-Instruct
+    api_key_env: HF_TOKEN
+  - name: hf_qwen25_72b_hyperbolic
+    backend: huggingface-chat
+    provider: hyperbolic
+    model: Qwen/Qwen2.5-72B-Instruct
+    api_key_env: HF_TOKEN
+  - name: hf_qwen3_next_80b_hyperbolic
+    backend: huggingface-chat
+    provider: hyperbolic
+    model: Qwen/Qwen3-Next-80B-A3B-Instruct
+    api_key_env: HF_TOKEN
+  - name: hf_qwen3_235b_hyperbolic
+    backend: huggingface-chat
+    provider: hyperbolic
+    model: Qwen/Qwen3-235B-A22B-Instruct-2507
+    api_key_env: HF_TOKEN
+  - name: hf_qwq32b_hyperbolic
+    backend: huggingface-chat
+    provider: hyperbolic
+    model: Qwen/QwQ-32B
+    api_key_env: HF_TOKEN
+  - name: hf_kimi_k2_hyperbolic
+    backend: huggingface-chat
+    provider: hyperbolic
+    model: moonshotai/Kimi-K2-Instruct
+    api_key_env: HF_TOKEN

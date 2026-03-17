@@ -1,0 +1,39 @@
+dataset:
+  hf_dataset: Muennighoff/natural-instructions
+  split: test
+  max_tasks: 25
+  max_instances_per_task: 25
+  seed: 7
+  streaming: true
+  shuffle_buffer_size: 10000
+  max_records_to_scan: 250000
+
+prompt:
+  include_positive_examples: false
+  include_negative_examples: false
+  num_positive_examples: 0
+  num_negative_examples: 0
+  max_definition_chars: 4000
+  max_input_chars: 8000
+  max_example_chars: 1500
+  system_prompt: >-
+    You are answering one Super Natural Instructions task. Return only the task answer.
+    Do not explain your reasoning. Do not include labels such as "Answer:".
+
+generation:
+  temperature: 0.0
+  max_output_tokens: 256
+  timeout_seconds: 120
+  max_retries: 4
+
+output:
+  root_dir: results/wide
+  resume: true
+  overwrite: false
+
+models:
+  - name: hf_qwq32b_hyperbolic
+    backend: huggingface-chat
+    provider: hyperbolic
+    model: Qwen/QwQ-32B
+    api_key_env: HF_TOKEN
