@@ -6,7 +6,7 @@ dataset:
   seed: 7
   streaming: true
   shuffle_buffer_size: 10000
-  max_records_to_scan: 1000000
+  max_records_to_scan: 100000
 
 prompt:
   include_positive_examples: false
@@ -20,12 +20,6 @@ prompt:
     You are answering one Super Natural Instructions task. Return only the task answer.
     Do not explain your reasoning. Do not include labels such as "Answer:".
 
-icl:
-  enabled: true
-  num_examples: 5
-  source_split: test
-  max_records_to_scan: 1000000
-
 generation:
   temperature: 0.0
   max_output_tokens: 256
@@ -33,7 +27,7 @@ generation:
   max_retries: 4
 
 output:
-  root_dir: results/icl
+  root_dir: results/default_25_examples
   resume: true
   overwrite: false
 
