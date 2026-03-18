@@ -1,50 +1,53 @@
 # beyond-superni
 
-Self-contained benchmark harness for evaluating remote LLMs on the [Super Natural Instructions dataset](https://huggingface.co/datasets/Muennighoff/natural-instructions) without fine-tuning.
+`beyond-superni` is a benchmark harness for measuring how remote LLMs perform on Super Natural Instructions (SuperNI) without fine-tuning.
+
+The repo is built for comparative evaluation, not training. It samples SuperNI tasks, prompts each configured model through an API, scores the outputs with a shared metric pipeline, and writes reusable result artifacts for later analysis and plotting.
 
 Documentation:
 
 - [Benchmark metrics guide](docs/benchmark-metrics.md)
 
-## What this does
+## What This Repository Is For
 
-- Downloads `Muennighoff/natural-instructions` from Hugging Face.
-- Streams a fixed subset of tasks and instances per task from the held-out split.
-- Builds instruction-following prompts from each task definition and optional examples.
-- Supports an ICL benchmark mode that prepends random same-task few-shot examples from a disjoint support split.
-- Queries remote models only:
-  - OpenAI via the official `openai` API.
-  - Hugging Face Inference Providers via `huggingface_hub.InferenceClient`, with `provider=hyperbolic` by default for Llama and Qwen.
-- Scores predictions against task references with normalized exact match, token F1, and ROUGE-L.
-- Writes per-example outputs plus aggregate summaries to `results/...`.
+This repository is mainly for benchmarking SuperNI across different model providers and model snapshots.
 
-## Why this setup
+It is designed to answer questions like:
 
-SuperNI is primarily used as a continual-learning or per-task SFT resource. This experiment deliberately does **no fine-tuning**. It treats SuperNI as a zero-shot benchmark for current frontier models to measure how difficult the benchmark still is for strong base models.
+- How strong are current remote models on SuperNI in a zero-shot setup?
+- How much does matched same-task ICL help?
+- Which models give the best quality / latency tradeoff on the same sampled benchmark slice?
+- How do results change when you widen the model sweep or increase examples per task?
 
-The repo also supports a matched ICL mode. In that mode, each evaluation prompt is augmented with `icl.num_examples` random support examples from the same task. By default, the support examples can come from the benchmark split itself as long as they are disjoint from the evaluated inputs. If you want a stricter setup, set `icl.source_split: train`. In either case, the harness excludes any support example whose `id` or normalized input overlaps an evaluation example.
+## Benchmark Design
 
-The Hugging Face dataset artifact exposed here is a flattened instance-level view with the fields `task_name`, `definition`, `inputs`, and `targets`. The harness benchmarks that view directly instead of reconstructing the original task JSON files.
+The harness:
 
-The default config is pinned to current model snapshots as of **March 17, 2026**:
+- loads `Muennighoff/natural-instructions` from Hugging Face
+- samples a bounded subset of tasks and examples from a chosen split
+- builds prompts from each task definition and input
+- optionally injects matched few-shot examples from the same task
+- calls remote models only
+- scores predictions with normalized exact match, token F1, and ROUGE-L
+- records latency and raw response payloads
+- writes per-example JSONL plus aggregate summaries and plots
 
-- OpenAI `gpt-5.4-2026-03-05`
-- OpenAI `gpt-5-mini-2025-08-07`
-- Hyperbolic `meta-llama/Llama-3.3-70B-Instruct`
-- Hyperbolic `Qwen/Qwen3-235B-A22B-Instruct-2507`
+This is intentionally not a SuperNI fine-tuning repo. The point is to treat SuperNI as an instruction-following benchmark for already-trained models.
 
-Adjust `configs/default.yaml` if you want different snapshots, smaller models, or cheaper runs.
+## Supported Model Backends
 
-There is also a broader preset in `configs/wide.yaml` that expands the open-source sweep with additional Llama, Qwen, QwQ, and Kimi models and increases the sample count to 10 examples per task.
+- OpenAI via the official `openai` SDK
+- Hugging Face Inference Providers via `huggingface_hub.InferenceClient`
 
-## Setup
+The current configs are set up for OpenAI and Hyperbolic-routed Hugging Face models, but the YAML format is general enough to swap model IDs, providers, and credentials.
+
+## Quick Start
 
 ```bash
 uv venv
 source .venv/bin/activate
 uv pip install -e ".[dev]"
-# optional, for figure rendering:
-uv pip install -e ".[dev,viz]"
+uv pip install -e ".[dev,viz]"  # optional, for plotting
 ```
 
 Set credentials:
@@ -54,60 +57,126 @@ export OPENAI_API_KEY=...
 export HF_TOKEN=...
 ```
 
-For Hugging Face Inference Providers, `HF_TOKEN` works when you route through Hugging Face. If you want to use a provider-specific key instead, set `api_key_env` on the model entry in [configs/default.yaml](/workspace/beyond-superni/configs/default.yaml) and export that variable instead, for example `HYPERBOLIC_API_KEY`.
+If you want to use a provider-specific key instead of `HF_TOKEN`, set `api_key_env` on the model entry in [configs/default.yaml](configs/default.yaml) and export that variable.
 
-## Run
+## Running Benchmarks
+
+Run the default benchmark:
 
 ```bash
 superni-benchmark run --config configs/default.yaml
-# or, for the matched ICL variant:
+```
+
+Run the matched ICL benchmark:
+
+```bash
 superni-benchmark run --config configs/icl.yaml
-# or, for a wider/longer run:
+```
+
+Run a wider, more expensive sweep:
+
+```bash
 superni-benchmark run --config configs/wide.yaml
 ```
 
-Artifacts:
+## Included Benchmark Presets
 
-- `results/default/manifest.json`
-- `results/default/*.jsonl`
-- `results/default/summary.json`
-- `results/default/summary.md`
+- [configs/default.yaml](configs/default.yaml): default cross-provider benchmark, 25 tasks x 3 examples
+- [configs/default_10.yaml](configs/default_10.yaml): smaller smoke-test style run, 10 tasks x 3 examples
+- [configs/default_25_examples.yaml](configs/default_25_examples.yaml): larger zero-shot benchmark, 25 tasks x 25 examples
+- [configs/icl.yaml](configs/icl.yaml): matched ICL run with 3 same-task support examples
+- [configs/icl_big.yaml](configs/icl_big.yaml): larger matched ICL run with 5 support examples
+- [configs/wide.yaml](configs/wide.yaml): broader model sweep at 25 tasks x 25 examples
+- [configs/high_reasoning_effort_25_examples.yaml](configs/high_reasoning_effort_25_examples.yaml): single-model high-reasoning run
+- [configs/hyperbolic_only.yaml](configs/hyperbolic_only.yaml): Hyperbolic-backed subset only
+- [configs/qwq_only.yaml](configs/qwq_only.yaml): single-model QwQ run
+- [configs/kimi_only.yaml](configs/kimi_only.yaml): single-model Kimi run
 
-If a run stops mid-way, rerun the same command. Existing per-model JSONL files are reused and only missing examples are requested again.
+## Outputs
 
-## Plot
+Each run writes a results directory such as `results/default/` with:
 
-The repo now includes a reusable plotting command that reads any `results/*` directory. It prefers `summary.json` when present and falls back to `summary.md`.
+- `manifest.json`: timestamp, config snapshot, task count, example count
+- `<model>.jsonl`: one record per evaluated example
+- `summary.json`: aggregate metrics and per-task breakdowns
+- `summary.md`: quick human-readable summary table
+
+If `output.resume: true` is enabled, rerunning the same benchmark reuses existing model outputs and only requests missing examples. If prompts changed, the harness falls back to a fresh write for that model output file.
+
+## Plotting
+
+Generate figures from an existing results directory:
 
 ```bash
 superni-benchmark plot --results results/default
-# choose a different metric for the heatmap and write SVGs:
 superni-benchmark plot --results results/wide --heatmap-metric rouge_l --top-tasks 15 --format svg
 ```
 
-By default, figures are written to `results/<run>/figures/` and include:
+By default, plots are written to `results/<run>/figures/` and include:
 
-- grouped score bars across models
-- latency-vs-quality scatter
-- per-task heatmap for the selected metric
+- model score overview
+- latency vs quality scatter
+- per-task heatmap when task breakdowns are available
 
-## Cost control
+## How Sampling Works
 
-The full dataset is too large for practical API benchmarking. The default config uses the held-out `test` split and:
+The benchmark does not evaluate the full dataset by default. Instead, configs cap:
 
-- 25 tasks
-- 3 instances per task
-- 75 total model calls per model
+- `dataset.max_tasks`
+- `dataset.max_instances_per_task`
+- `dataset.max_records_to_scan`
 
-That is enough to get a first pass on relative difficulty without turning the run into a large API bill. Increase `max_tasks` and `max_instances_per_task` gradually.
+This keeps API cost manageable while preserving a comparable benchmark slice across models.
 
-To increase examples per task, raise `dataset.max_instances_per_task`. If you do that, also raise `dataset.max_records_to_scan` so the streaming sampler has enough rows to fill every task quota. Total calls are roughly `enabled_models * max_tasks * max_instances_per_task`.
+The loader supports:
 
-For ICL runs, the number of API calls does not change, but prompt size does. The default [configs/icl.yaml](/workspace/beyond-superni/configs/icl.yaml) uses `icl.source_split: test` and excludes any overlap with benchmarked inputs. If you want support examples from a different split, set `icl.source_split: train`.
+- streaming dataset reads
+- buffered shuffle for approximate randomization
+- task allowlists and blocklists
+- bounded task-balanced sampling
+
+Total API calls are roughly:
+
+```text
+enabled_models * max_tasks * max_instances_per_task
+```
+
+ICL increases prompt size, but not the number of model calls.
+
+## How ICL Works
+
+When `icl.enabled: true`, the harness collects non-overlapping same-task support examples and injects them ahead of the evaluated input.
+
+By default, [configs/icl.yaml](configs/icl.yaml) uses `icl.source_split: test` and excludes support examples whose example ID or normalized input overlaps with the evaluation set. If you want a stricter separation, point `icl.source_split` at another split such as `train`.
+
+## Metrics
+
+Each prediction is scored against one or more references with:
+
+- exact match
+- token F1
+- ROUGE-L
+
+Latency is reported separately as `avg_latency_seconds`.
+
+See the full metric behavior in [docs/benchmark-metrics.md](docs/benchmark-metrics.md).
+
+## Customizing a Benchmark
+
+The main knobs live in the YAML config:
+
+- `dataset`: sampling limits, split, allowlist/blocklist, streaming behavior
+- `prompt`: prompt construction and truncation
+- `icl`: matched few-shot support examples
+- `generation`: retries, timeout, output cap, reasoning effort
+- `models`: backend, model ID, provider, API key env var, extra request body
+- `output`: result directory, resume behavior, overwrite policy
+
+For reproducible comparisons, prefer pinned model snapshots over floating aliases.
 
 ## Notes
 
-- SuperNI contains heterogeneous tasks, so automatic scoring is necessarily approximate.
-- The harness uses multiple reference strings when available and takes the best match per example.
-- The loader uses streaming plus buffered shuffle so it does not need to materialize the full 6M+ row training split.
-- For reproducibility, use snapshot model IDs instead of floating aliases whenever possible.
+- SuperNI is heterogeneous, so automatic metrics are useful but imperfect.
+- Overall scores are averaged across examples, not macro-averaged equally across tasks.
+- The repo benchmarks the flattened Hugging Face dataset representation directly.
+- Plotting requires the optional `viz` dependencies.
